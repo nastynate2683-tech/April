@@ -46,9 +46,13 @@ jobs:
         id: locate_project
         shell: bash
         run: |
-          # Prefer the settings file: module-level build.gradle files must not be
+          # Prefer the settings file so module-level build files are not
           # mistaken for the root project.
-          SETTINGS_FILE="$(find "$RUNNER_TEMP/android-project" -type f \\( -name 'settings.gradle' -o -name 'settings.gradle.kts' \\) | sort | head -n 1)"
+          SETTINGS_FILE="$(find "$RUNNER_TEMP/android-project" -type f -name 'settings.gradle.kts' -print -quit)"
+          if [ -z "$SETTINGS_FILE" ]; then
+            SETTINGS_FILE="$(find "$RUNNER_TEMP/android-project" -type f -name 'settings.gradle' -print -quit)"
+          fi
+
           if [ -n "$SETTINGS_FILE" ]; then
             PROJECT_ROOT="$(dirname "$SETTINGS_FILE")"
           else
