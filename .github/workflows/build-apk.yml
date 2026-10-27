@@ -106,10 +106,12 @@ jobs:
         shell: bash
         run: |
           cat > "$RUNNER_TEMP/align-jvm-target.gradle" <<'GRADLE'
-          allprojects {
-              tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
-                  sourceCompatibility = '17'
-                  targetCompatibility = '17'
+          gradle.projectsEvaluated {
+              allprojects {
+                  tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
+                      sourceCompatibility = '17'
+                      targetCompatibility = '17'
+                  }
               }
           }
           GRADLE
