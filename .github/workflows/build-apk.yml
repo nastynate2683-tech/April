@@ -102,14 +102,26 @@ jobs:
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
+      - name: Align Java compile target with Kotlin
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/align-jvm-target.gradle" <<'GRADLE'
+          allprojects {
+              tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
+                  sourceCompatibility = '17'
+                  targetCompatibility = '17'
+              }
+          }
+          GRADLE
+
       - name: Build debug APK
         working-directory: ${{ steps.locate_project.outputs.project_root }}
         shell: bash
         run: |
           if [ -f "./gradlew" ]; then
-            ./gradlew assembleDebug --stacktrace
+            ./gradlew -I "$RUNNER_TEMP/align-jvm-target.gradle" assembleDebug --stacktrace
           else
-            gradle assembleDebug --stacktrace
+            gradle -I "$RUNNER_TEMP/align-jvm-target.gradle" assembleDebug --stacktrace
           fi
 
       - name: Find generated APK
