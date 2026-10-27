@@ -146,5 +146,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AnonymousClockstopper-debug-apk
-          path: ${{ steps.locate_project.outputs.project_root }}/${{ steps.find_apk.outputs.apk }}
+          path: ${{ steps.find_apk.outputs.apk }}
           if-no-files-found: error
