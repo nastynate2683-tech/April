@@ -80,18 +80,14 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        shell: bash
-        run: |
-          sdkmanager "platform-tools" \
-                     "platforms;android-34" \
-                     "build-tools;34.0.0"
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+          accept-android-sdk-licenses: true
 
       - name: Prepare Gradle
-        shell: bash
         working-directory: ${{ steps.locate_project.outputs.project_root }}
+        shell: bash
         run: |
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
@@ -131,7 +127,7 @@ jobs:
 
           if [ -z "$APK" ]; then
             echo "ERROR: No debug APK was produced."
-            find . -type f | grep -E '\.apk$' || true
+            find . -type f | grep -E '\\.apk$' || true
             exit 1
           fi
 
