@@ -131,7 +131,7 @@ jobs:
         working-directory: ${{ steps.locate_project.outputs.project_root }}
         shell: bash
         run: |
-          APK="$(find . -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)"
+          APK="$(find "$PWD" -type f -path '*/build/outputs/apk/debug/*.apk' -print -quit)"
 
           if [ -z "$APK" ]; then
             echo "ERROR: No debug APK was produced."
