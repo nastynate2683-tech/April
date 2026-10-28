@@ -8,7 +8,7 @@ import android.hardware.SensorManager
 import kotlin.math.PI
 import kotlin.math.exp
 
-/** Rotation-vector motion input with frame-rate-independent smoothing. */
+/** Rotation-vector motion input with an intentionally strong, visible home-screen response. */
 class MotionController(context: Context) : SensorEventListener {
     private val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val sensor = manager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
@@ -27,7 +27,7 @@ class MotionController(context: Context) : SensorEventListener {
     private var registered = false
 
     fun setSensitivity(percent: Int) {
-        // 50% preserves the original response; 0% disables tilt input.
+        // 50% is the neutral setting; 100% is deliberately much more responsive.
         sensitivityScale = (percent.coerceIn(0, 100) / 50f).coerceIn(0f, 2f)
     }
 
@@ -48,16 +48,21 @@ class MotionController(context: Context) : SensorEventListener {
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type != Sensor.TYPE_ROTATION_VECTOR &&
             event.sensor.type != Sensor.TYPE_GAME_ROTATION_VECTOR) return
+
         SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
         SensorManager.getOrientation(rotationMatrix, orientation)
-        targetX = ((orientation[2] / (PI.toFloat() / 3f)) * sensitivityScale).coerceIn(-1f, 1f)
-        targetY = ((orientation[1] / (PI.toFloat() / 3f)) * sensitivityScale).coerceIn(-1f, 1f)
+
+        // Use a much smaller angular window so normal phone tilts produce a large,
+        // obvious back-and-forth parallax response instead of a barely perceptible drift.
+        val fullScaleAngle = PI.toFloat() / 12f // 15 degrees
+        targetX = ((orientation[2] / fullScaleAngle) * sensitivityScale).coerceIn(-1f, 1f)
+        targetY = ((orientation[1] / fullScaleAngle) * sensitivityScale).coerceIn(-1f, 1f)
     }
 
-    /** Smooth response independent of refresh rate; tau ≈ 85 ms. */
+    /** Faster follow so the artwork tracks the phone instead of feeling sluggish. */
     fun update(deltaSeconds: Float) {
         val dt = deltaSeconds.coerceIn(0f, 0.05f)
-        val blend = (1f - exp(-dt / 0.085f)).coerceIn(0f, 1f)
+        val blend = (1f - exp(-dt / 0.045f)).coerceIn(0f, 1f)
         x += (targetX - x) * blend
         y += (targetY - y) * blend
     }
