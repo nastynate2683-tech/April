@@ -42,12 +42,37 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
           accept-android-sdk-licenses: true
+      - name: Prepare Gradle
+        working-directory: ${{ env.PROJECT_ROOT }}
+        shell: bash
+        run: |
+          if [ -f "./gradlew" ]; then chmod +x ./gradlew; else
+            sudo apt-get update && sudo apt-get install -y unzip
+            wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip -O "$RUNNER_TEMP/gradle.zip"
+            sudo mkdir -p /opt/gradle && sudo unzip -q "$RUNNER_TEMP/gradle.zip" -d /opt/gradle
+            echo "/opt/gradle/gradle-8.9/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Create local.properties
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+      - name: Align Java compile target with Kotlin
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/align-jvm-target.gradle" <<'GRADLE'
+          gradle.projectsEvaluated {
+              allprojects {
+                  tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
+                      sourceCompatibility = '17'
+                      targetCompatibility = '17'
+                  }
+              }
+          }
+          GRADLE
       - name: Build APK
         working-directory: ${{ env.PROJECT_ROOT }}
         shell: bash
         run: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          if [ -f ./gradlew ]; then chmod +x ./gradlew && ./gradlew assembleDebug --stacktrace; else sudo apt-get update && sudo apt-get install -y unzip && wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip -O "$RUNNER_TEMP/gradle.zip" && sudo mkdir -p /opt/gradle && sudo unzip -q "$RUNNER_TEMP/gradle.zip" -d /opt/gradle && /opt/gradle/gradle-8.9/bin/gradle assembleDebug --stacktrace; fi
+          if [ -f "./gradlew" ]; then ./gradlew -I "$RUNNER_TEMP/align-jvm-target.gradle" assembleDebug --stacktrace; else gradle -I "$RUNNER_TEMP/align-jvm-target.gradle" assembleDebug --stacktrace; fi
       - name: Upload APRIL APK
         uses: actions/upload-artifact@v4
         with:
