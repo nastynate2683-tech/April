@@ -2,6 +2,7 @@ package com.example.motogyro
 
 import android.app.Activity
 import android.app.WallpaperManager
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Typeface
@@ -81,12 +82,7 @@ class MainActivity : Activity() {
             text = "Set APRIL Live Wallpaper"
             setOnClickListener {
                 saveSliders()
-                startActivity(Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
-                    putExtra(
-                        WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
-                        ComponentName(this@MainActivity, AprilWallpaperService::class.java)
-                    )
-                })
+                openLiveWallpaperChooser()
             }
         }, buttonParams())
 
@@ -99,6 +95,26 @@ class MainActivity : Activity() {
         }, matchWrap())
 
         setContentView(root)
+    }
+
+    private fun openLiveWallpaperChooser() {
+        val component = ComponentName(this, AprilWallpaperService::class.java)
+        val directIntent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+            putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component)
+        }
+        try {
+            startActivity(directIntent)
+        } catch (_: ActivityNotFoundException) {
+            try {
+                startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER))
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(
+                    this,
+                    "Android wallpaper picker is unavailable on this device",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     private fun addSlider(
