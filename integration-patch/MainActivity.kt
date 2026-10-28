@@ -15,29 +15,19 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 
-/**
- * APRIL shell settings. These controls write to the same preference store that
- * WallpaperRenderer observes, so slider changes take effect without changing artwork.
- *
- * Also accepts Adalo's april://settings?gyro=50&parallax=60&motion=40 deep link.
- */
+/** APRIL settings shell, backed by the same preferences read by WallpaperRenderer. */
 class MainActivity : Activity() {
     private lateinit var gyroSlider: SeekBar
     private lateinit var parallaxSlider: SeekBar
     private lateinit var motionSlider: SeekBar
-    private lateinit var gyroValue: TextView
-    private lateinit var parallaxValue: TextView
-    private lateinit var motionValue: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         if (saveIncomingSettings(intent)) {
             Toast.makeText(this, "APRIL settings saved", Toast.LENGTH_SHORT).show()
             finish()
             return
         }
-
         showSettings()
     }
 
@@ -59,77 +49,64 @@ class MainActivity : Activity() {
             setBackgroundColor(0xFF101216.toInt())
         }
 
-        val title = TextView(this).apply {
+        root.addView(TextView(this).apply {
             text = "APRIL • Motion Settings"
             textSize = 24f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(0xFFFFFFFF.toInt())
             gravity = Gravity.CENTER
-        }
-        root.addView(title, matchWrap())
+        }, matchWrap())
 
-        val subtitle = TextView(this).apply {
+        root.addView(TextView(this).apply {
             text = "Adjust the existing 3D wallpaper response"
             textSize = 14f
             setTextColor(0xFFB9C0CA.toInt())
             gravity = Gravity.CENTER
             setPadding(0, dp(8), 0, dp(24))
-        }
-        root.addView(subtitle, matchWrap())
+        }, matchWrap())
 
-        gyroValue = addSlider(root, "Gyroscope Sensitivity", current.gyroSensitivity).also { }
-        parallaxValue = addSlider(root, "Parallax Depth", current.parallaxDepth).also { }
-        motionValue = addSlider(root, "Motion Strength", current.motionStrength).also { }
+        addSlider(root, "Gyroscope Sensitivity", current.gyroSensitivity) { gyroSlider = it }
+        addSlider(root, "Parallax Depth", current.parallaxDepth) { parallaxSlider = it }
+        addSlider(root, "Motion Strength", current.motionStrength) { motionSlider = it }
 
-        gyroSlider = root.getTag(TAG_GYRO) as SeekBar
-        parallaxSlider = root.getTag(TAG_PARALLAX) as SeekBar
-        motionSlider = root.getTag(TAG_MOTION) as SeekBar
-
-        val saveButton = Button(this).apply {
+        root.addView(Button(this).apply {
             text = "Save Settings"
             setOnClickListener {
                 saveSliders()
                 Toast.makeText(this@MainActivity, "Settings saved successfully", Toast.LENGTH_SHORT).show()
             }
-        }
-        root.addView(saveButton, buttonParams())
+        }, buttonParams())
 
-        val wallpaperButton = Button(this).apply {
+        root.addView(Button(this).apply {
             text = "Set APRIL Live Wallpaper"
             setOnClickListener {
                 saveSliders()
-                startActivity(
-                    Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
-                        putExtra(
-                            WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
-                            ComponentName(this@MainActivity, GyroWallpaperService::class.java)
-                        )
-                    }
-                )
+                startActivity(Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+                    putExtra(
+                        WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                        ComponentName(this@MainActivity, GyroWallpaperService::class.java)
+                    )
+                })
             }
-        }
-        root.addView(wallpaperButton, buttonParams())
+        }, buttonParams())
 
-        val note = TextView(this).apply {
+        root.addView(TextView(this).apply {
             text = "Settings change the existing renderer. Artwork and depth layers stay unchanged."
             textSize = 12f
             setTextColor(0xFFB9C0CA.toInt())
             gravity = Gravity.CENTER
             setPadding(0, dp(16), 0, 0)
-        }
-        root.addView(note, matchWrap())
+        }, matchWrap())
 
         setContentView(root)
     }
 
-    private fun addSlider(root: LinearLayout, label: String, initial: Int): TextView {
-        val isGyro = label.startsWith("Gyroscope")
-        val isParallax = label.startsWith("Parallax")
-        val key = when {
-            isGyro -> TAG_GYRO
-            isParallax -> TAG_PARALLAX
-            else -> TAG_MOTION
-        }
+    private fun addSlider(
+        root: LinearLayout,
+        label: String,
+        initial: Int,
+        assign: (SeekBar) -> Unit
+    ) {
         val heading = TextView(this).apply {
             text = "$label: $initial%"
             textSize = 16f
@@ -143,6 +120,7 @@ class MainActivity : Activity() {
             progress = initial.coerceIn(0, 100)
             contentDescription = label
         }
+        assign(slider)
         slider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 heading.text = "$label: $progress%"
@@ -151,17 +129,10 @@ class MainActivity : Activity() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
         })
         root.addView(slider, matchWrap())
-        root.setTag(key, slider)
-        return heading
     }
 
     private fun saveSliders() {
-        MotionSettingsStore.save(
-            this,
-            gyroSlider.progress,
-            parallaxSlider.progress,
-            motionSlider.progress
-        )
+        MotionSettingsStore.save(this, gyroSlider.progress, parallaxSlider.progress, motionSlider.progress)
     }
 
     private fun saveIncomingSettings(incoming: Intent?): Boolean {
@@ -179,17 +150,7 @@ class MainActivity : Activity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
     private fun matchWrap() = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     )
-    private fun buttonParams() = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT
-    ).apply { topMargin = dp(12) }
-
-    companion object {
-        private const val TAG_GYRO = 101
-        private const val TAG_PARALLAX = 102
-        private const val TAG_MOTION = 103
-    }
+    private fun buttonParams() = matchWrap().apply { topMargin = dp(12) }
 }
