@@ -120,10 +120,6 @@ class MainActivity : Activity() {
         }
         content.addView(presets, matchWrap())
 
-        addSlider(content, "Gyroscope Sensitivity", current.gyroSensitivity) { gyroSlider = it }
-        addSlider(content, "Parallax Depth", current.parallaxDepth) { parallaxSlider = it }
-        addSlider(content, "Motion Strength", current.motionStrength) { motionSlider = it }
-
         content.addView(Button(this).apply {
             text = "APPLY & CONTINUE"
             setTextColor(Color.WHITE)
@@ -132,6 +128,10 @@ class MainActivity : Activity() {
                 openLiveWallpaperChooser()
             }
         }, primaryButtonParams())
+
+        addSlider(content, "Gyroscope Sensitivity", current.gyroSensitivity) { gyroSlider = it }
+        addSlider(content, "Parallax Depth", current.parallaxDepth) { parallaxSlider = it }
+        addSlider(content, "Motion Strength", current.motionStrength) { motionSlider = it }
 
         content.addView(Button(this).apply {
             text = "Save Settings"
@@ -269,6 +269,6 @@ class MainActivity : Activity() {
     private fun buttonParams() = matchWrap().apply { topMargin = dp(8) }
     private fun primaryButtonParams() = matchWrap().apply {
         topMargin = dp(14)
-        bottomMargin = dp(4)
+        bottomMargin = dp(8)
     }
 }
