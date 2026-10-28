@@ -14,10 +14,9 @@ import android.view.SurfaceHolder
 import kotlin.math.max
 
 /**
- * APRIL renderer. The untouched six-layer artwork remains the fallback/demo.
- * Uploaded single images use a bounded camera window and a full-bleed backing
- * image so motion never exposes black edges. The depth-map reconstruction
- * module can replace this path without changing the upload/settings contract.
+ * APRIL renderer. The original six-layer artwork remains the fallback/demo.
+ * Uploaded images use the continuous TurboDepthRenderer so parallax changes
+ * depth separation rather than translating the entire picture off-screen.
  */
 class WallpaperRenderer(
     private val context: Context,
@@ -44,6 +43,7 @@ class WallpaperRenderer(
     private val depth = floatArrayOf(4f, 10f, 20f, 35f, 50f, 65f)
     private val customImageFile by lazy { java.io.File(context.filesDir, "april_custom_image.jpg") }
     private var customImage: Bitmap? = null
+    private var turbo: TurboDepthRenderer? = null
     private val handler = Handler(Looper.getMainLooper())
     private var width = 1
     private var height = 1
@@ -51,20 +51,21 @@ class WallpaperRenderer(
     private var lastFrameNanos = 0L
     private val frameRunnable = object : Runnable {
         override fun run() {
-            if (!running) return
+            if (!running || turbo != null) return
             val now = System.nanoTime()
             val dt = if (lastFrameNanos == 0L) 1f / 60f
                 else ((now - lastFrameNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
             lastFrameNanos = now
             motion.update(dt)
             drawFrame()
-            if (running) handler.postDelayed(this, 16L)
+            if (running && turbo == null) handler.postDelayed(this, 16L)
         }
     }
 
     fun resize(w: Int, h: Int) {
         width = w.coerceAtLeast(1)
         height = h.coerceAtLeast(1)
+        turbo?.resize(width, height)
     }
 
     fun start() {
@@ -73,18 +74,29 @@ class WallpaperRenderer(
         lastFrameNanos = 0L
         settings = MotionSettingsStore.load(context)
         motion.setSensitivity(settings.gyroSensitivity)
-        customImage = if (preferences.getBoolean("use_custom_image", false) && customImageFile.exists())
-            BitmapFactory.decodeFile(customImageFile.absolutePath) else null
+        val customEnabled = preferences.getBoolean("use_custom_image", false) && customImageFile.exists()
         preferences.registerOnSharedPreferenceChangeListener(settingsListener)
         motion.start()
-        handler.removeCallbacks(frameRunnable)
-        handler.post(frameRunnable)
+        if (customEnabled) {
+            customImage = null
+            turbo = TurboDepthRenderer(holder, motion, { settings }, customImageFile).also {
+                it.resize(width, height)
+                it.start()
+            }
+        } else {
+            customImage = null
+            handler.removeCallbacks(frameRunnable)
+            handler.post(frameRunnable)
+        }
     }
 
     fun stop() {
         if (!running) return
         running = false
         preferences.unregisterOnSharedPreferenceChangeListener(settingsListener)
+        turbo?.stop()
+        turbo = null
+        customImage = null
         motion.stop()
         handler.removeCallbacks(frameRunnable)
         lastFrameNanos = 0L
@@ -94,46 +106,13 @@ class WallpaperRenderer(
         val canvas = try { holder.lockCanvas() } catch (_: Exception) { null } ?: return
         try {
             canvas.drawColor(Color.BLACK)
-            val selected = customImage
-            if (selected != null && !selected.isRecycled) {
-                drawUploadedImage(selected, canvas)
-            } else {
-                val currentSettings = settings
-                layers.forEachIndexed { index, bitmap ->
-                    drawLayer(bitmap, depth[index], currentSettings, canvas)
-                }
+            val currentSettings = settings
+            layers.forEachIndexed { index, bitmap ->
+                drawLayer(bitmap, depth[index], currentSettings, canvas)
             }
         } finally {
             try { holder.unlockCanvasAndPost(canvas) } catch (_: Exception) { }
         }
-    }
-
-    private fun drawUploadedImage(bitmap: Bitmap, canvas: Canvas) {
-        // Cover the entire viewport with a softly enlarged copy first. It masks
-        // the tiny edge regions exposed by the bounded foreground movement.
-        val baseScale = max(width.toFloat() / bitmap.width, height.toFloat() / bitmap.height)
-        val bgW = bitmap.width * baseScale * 1.10f
-        val bgH = bitmap.height * baseScale * 1.10f
-        canvas.drawBitmap(bitmap, null, RectF(
-            (width - bgW) / 2f, (height - bgH) / 2f,
-            (width + bgW) / 2f, (height + bgH) / 2f
-        ), paint)
-
-        // Centered virtual-camera movement: never translate the whole image
-        // by the old, unbounded 20%-of-screen per-layer offsets.
-        val scale = baseScale * 1.055f
-        val dw = bitmap.width * scale
-        val dh = bitmap.height * scale
-        val parallax = settings.parallaxDepth / 100f
-        val motionStrength = settings.motionStrength / 100f
-        val maxX = width * 0.025f * parallax * motionStrength
-        val maxY = height * 0.025f * parallax * motionStrength
-        val sx = (motion.x * maxX).coerceIn(-maxX, maxX)
-        val sy = (motion.y * maxY).coerceIn(-maxY, maxY)
-        canvas.drawBitmap(bitmap, null, RectF(
-            (width - dw) / 2f - sx, (height - dh) / 2f - sy,
-            (width + dw) / 2f - sx, (height + dh) / 2f - sy
-        ), paint)
     }
 
     private fun drawLayer(bitmap: Bitmap, depthMultiplier: Float, current: MotionSettings, canvas: Canvas) {
@@ -144,8 +123,6 @@ class WallpaperRenderer(
         val by = (height - dh) / 2f
         val parallaxScale = current.parallaxDepth / 60f
         val motionScale = current.motionStrength / 40f
-        // Keep legacy layer offsets bounded so high settings don't throw the
-        // composition offscreen. The original artwork/layers are unchanged.
         val sx = (motion.x * depthMultiplier * parallaxScale * motionScale * width * 0.20f)
             .coerceIn(-width * 0.035f, width * 0.035f)
         val sy = (motion.y * depthMultiplier * parallaxScale * motionScale * height * 0.20f)
