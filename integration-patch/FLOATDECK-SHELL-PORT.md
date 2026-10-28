@@ -32,11 +32,15 @@ The existing Adalo-to-APRIL deep-link contract remains:
 
 The values in the example are defaults only; the actual Save Settings action must supply the current slider values.
 
+## Adapter added in this branch
+
+`integration-patch/AprilSettingsBridge.kt` defines the shared values and writes them to both the APRIL preference file and the FloatDeck settings preference file. It is an adapter component, not yet connected to FloatDeck's Compose sliders or included in a combined APK. It deliberately does not replace the APRIL renderer or alter the artwork.
+
 ## Safe integration sequence
 
 1. Keep the current APRIL engine and artwork as the source of truth.
 2. Port the shell/settings flow only after identifying the exact Compose entry points and preference keys.
-3. Make the shell write all three values to the same preference store that APRIL's wallpaper service reads.
+3. Call `AprilSettingsBridge.save()` from the shell's settings-save path with current slider values.
 4. Keep the existing APRIL renderer/service and register them in the combined app manifest; do not replace them with FloatDeck's service.
 5. Build in CI, inspect the APK, and test the deep link and wallpaper before considering any merge.
 
@@ -44,9 +48,10 @@ The values in the example are defaults only; the actual Save Settings action mus
 
 - [x] Created isolated `floatdeck-shell-integration` branch from `integrate-adalo-settings`.
 - [x] Confirmed FloatDeck has a native Compose settings activity, DataStore-backed settings repository, SharedPreferences mirror, and its own OpenGL wallpaper service.
-- [x] Confirmed the APRIL settings bridge is a separate working branch and builds successfully.
+- [x] Added a settings adapter scaffold for sharing the three values between the future shell and APRIL renderer.
+- [x] Kept the existing APRIL bridge and artwork source untouched.
 - [ ] Port FloatDeck settings UI into the APRIL app without changing the APRIL artwork or renderer.
 - [ ] Wire all three settings values to APRIL's renderer and validate on device.
 - [ ] Produce and test a combined debug APK.
 
-No upstream FloatDeck files have been changed. This repository contains the integration plan so the two projects can be joined deliberately instead of blindly replacing one engine with another.
+No upstream FloatDeck files have been changed. This branch is the integration lane; the original APK branch remains untouched.
