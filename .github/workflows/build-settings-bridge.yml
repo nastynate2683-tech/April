@@ -1,9 +1,9 @@
-name: Build APRIL Settings Bridge Debug APK
+name: Build APRIL + Settings Shell Debug APK
 
 on:
   push:
     branches:
-      - integrate-adalo-settings
+      - floatdeck-shell-integration
   workflow_dispatch:
 
 permissions:
@@ -13,7 +13,7 @@ jobs:
   build-bridge-apk:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout integration branch
         uses: actions/checkout@v4
 
       - name: Extract existing Android project
@@ -34,8 +34,8 @@ jobs:
           cp integration-patch/MotionController.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/MotionController.kt"
           cp integration-patch/WallpaperRenderer.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/WallpaperRenderer.kt"
           cp integration-patch/AndroidManifest.xml "$PROJECT_ROOT/app/src/main/AndroidManifest.xml"
-          echo "Applied settings bridge patch to extracted copy only."
-          echo "Original project ZIP and artwork remain unchanged."
+          echo "Applied APRIL settings shell and renderer bridge to extracted build copy."
+          echo "Original project ZIP, artwork, and original build branch remain unchanged."
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -84,7 +84,7 @@ jobs:
           }
           GRADLE
 
-      - name: Build settings bridge APK
+      - name: Build combined APRIL debug APK
         working-directory: ${{ env.PROJECT_ROOT }}
         shell: bash
         run: |
@@ -94,9 +94,9 @@ jobs:
             gradle -I "$RUNNER_TEMP/align-jvm-target.gradle" assembleDebug --stacktrace
           fi
 
-      - name: Upload settings bridge APK
+      - name: Upload combined APRIL APK
         uses: actions/upload-artifact@v4
         with:
-          name: AnonymousClockstopper-settings-bridge-debug-apk
+          name: APRIL-FloatDeck-Shell-Settings-Bridge-debug-apk
           path: ${{ env.PROJECT_ROOT }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
