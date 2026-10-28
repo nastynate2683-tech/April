@@ -84,7 +84,7 @@ class MainActivity : Activity() {
                 startActivity(Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
                     putExtra(
                         WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
-                        ComponentName(this@MainActivity, GyroWallpaperService::class.java)
+                        ComponentName(this@MainActivity, AprilWallpaperService::class.java)
                     )
                 })
             }
