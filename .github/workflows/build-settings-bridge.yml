@@ -28,6 +28,7 @@ jobs:
           cp integration-patch/MainActivity.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/MainActivity.kt"
           cp integration-patch/MotionController.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/MotionController.kt"
           cp integration-patch/WallpaperRenderer.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/WallpaperRenderer.kt"
+          cp integration-patch/TurboDepthRenderer.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/TurboDepthRenderer.kt"
           cp integration-patch/AprilWallpaperService.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/AprilWallpaperService.kt"
           cp integration-patch/AndroidManifest.xml "$PROJECT_ROOT/app/src/main/AndroidManifest.xml"
           mkdir -p "$PROJECT_ROOT/app/src/main/res/xml" "$PROJECT_ROOT/app/src/main/res/drawable" "$PROJECT_ROOT/app/src/main/res/mipmap-anydpi-v26"
