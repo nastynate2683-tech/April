@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -54,23 +55,23 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(22), dp(24), dp(22), dp(24))
+            setPadding(dp(16), dp(14), dp(16), dp(14))
             setBackgroundColor(0xFF101216.toInt())
         }
         content.addView(TextView(this).apply {
             text = "APRIL • TURBO 3D"
-            textSize = 25f
+            textSize = 21f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-        }, matchWrap())
+        }, compactWrap())
         content.addView(TextView(this).apply {
-            text = "Choose an image, preview it, then tune its motion."
-            textSize = 14f
+            text = "Choose an image, pick a speed, then apply."
+            textSize = 12f
             setTextColor(0xFFB9C0CA.toInt())
             gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, dp(16))
-        }, matchWrap())
+            setPadding(0, dp(4), 0, dp(8))
+        }, compactWrap())
 
         preview = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -78,33 +79,52 @@ class MainActivity : Activity() {
             contentDescription = "APRIL image preview"
         }
         content.addView(preview, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(230)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(170)
         ))
         imageStatus = TextView(this).apply {
-            textSize = 12f
+            textSize = 11f
             setTextColor(0xFFB9C0CA.toInt())
             gravity = Gravity.CENTER
-            setPadding(0, dp(6), 0, dp(4))
+            setPadding(0, dp(2), 0, dp(2))
         }
-        content.addView(imageStatus, matchWrap())
+        content.addView(imageStatus, compactWrap())
         refreshPreview()
 
-        content.addView(Button(this).apply {
-            text = "Upload Picture"
+        // Small left-aligned paperclip/upload control to save vertical space.
+        val uploadRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        }
+        uploadRow.addView(ImageButton(this).apply {
+            contentDescription = "Upload picture"
+            setImageResource(android.R.drawable.ic_menu_upload)
+            setBackgroundColor(Color.TRANSPARENT)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
             setOnClickListener { openImagePicker() }
-        }, buttonParams())
+        }, LinearLayout.LayoutParams(dp(46), dp(42)))
+        uploadRow.addView(TextView(this).apply {
+            text = "Upload picture"
+            textSize = 12f
+            setTextColor(0xFFB9C0CA.toInt())
+            setPadding(dp(4), 0, 0, 0)
+        }, compactWrap())
+        content.addView(uploadRow, compactWrap())
 
         content.addView(TextView(this).apply {
             text = "MOTION PRESETS"
-            textSize = 13f
+            textSize = 12f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(0xFFFF6B35.toInt())
-            setPadding(0, dp(16), 0, dp(2))
-        }, matchWrap())
+            setPadding(0, dp(5), 0, dp(1))
+        }, compactWrap())
         val presets = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         listOf("SLOW", "MEDIUM", "TURBO").forEachIndexed { index, name ->
             presets.addView(Button(this).apply {
                 text = name
+                textSize = 11f
+                minHeight = 0
+                minimumHeight = 0
+                setPadding(dp(4), 0, dp(4), 0)
                 setOnClickListener {
                     when (index) {
                         0 -> setSliders(25, 20, 20)
@@ -114,20 +134,27 @@ class MainActivity : Activity() {
                     saveSliders()
                     Toast.makeText(this@MainActivity, "$name preset saved", Toast.LENGTH_SHORT).show()
                 }
-            }, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-                marginEnd = dp(4)
+            }, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                marginEnd = dp(3)
             })
         }
-        content.addView(presets, matchWrap())
+        content.addView(presets, compactWrap())
 
+        // Always visible main action; it sits before the detailed sliders.
         content.addView(Button(this).apply {
             text = "APPLY & CONTINUE"
+            textSize = 13f
+            minHeight = 0
+            minimumHeight = 0
             setTextColor(Color.WHITE)
             setOnClickListener {
                 saveSliders()
                 openLiveWallpaperChooser()
             }
-        }, primaryButtonParams())
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)).apply {
+            topMargin = dp(5)
+            bottomMargin = dp(3)
+        })
 
         addSlider(content, "Gyroscope Sensitivity", current.gyroSensitivity) { gyroSlider = it }
         addSlider(content, "Parallax Depth", current.parallaxDepth) { parallaxSlider = it }
@@ -135,25 +162,16 @@ class MainActivity : Activity() {
 
         content.addView(Button(this).apply {
             text = "Save Settings"
+            textSize = 11f
+            minHeight = 0
+            minimumHeight = 0
             setOnClickListener {
                 saveSliders()
                 Toast.makeText(this@MainActivity, "Settings saved", Toast.LENGTH_SHORT).show()
             }
-        }, buttonParams())
-        content.addView(Button(this).apply {
-            text = "Preview / Set Live Wallpaper"
-            setOnClickListener {
-                saveSliders()
-                openLiveWallpaperChooser()
-            }
-        }, buttonParams())
-        content.addView(TextView(this).apply {
-            text = "Uploaded images are stored on this device."
-            textSize = 12f
-            setTextColor(0xFFB9C0CA.toInt())
-            gravity = Gravity.CENTER
-            setPadding(0, dp(14), 0, 0)
-        }, matchWrap())
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)).apply {
+            topMargin = dp(2)
+        })
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -223,11 +241,11 @@ class MainActivity : Activity() {
     private fun addSlider(root: LinearLayout, label: String, initial: Int, assign: (SeekBar) -> Unit) {
         val heading = TextView(this).apply {
             text = "$label: $initial%"
-            textSize = 16f
+            textSize = 13f
             setTextColor(Color.WHITE)
-            setPadding(0, dp(10), 0, dp(3))
+            setPadding(0, dp(3), 0, 0)
         }
-        root.addView(heading, matchWrap())
+        root.addView(heading, compactWrap())
         val slider = SeekBar(this).apply {
             max = 100
             progress = initial.coerceIn(0, 100)
@@ -241,7 +259,9 @@ class MainActivity : Activity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
         })
-        root.addView(slider, matchWrap())
+        root.addView(slider, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(34)
+        ))
     }
 
     private fun saveSliders() {
@@ -263,12 +283,7 @@ class MainActivity : Activity() {
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    private fun matchWrap() = LinearLayout.LayoutParams(
+    private fun compactWrap() = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     )
-    private fun buttonParams() = matchWrap().apply { topMargin = dp(8) }
-    private fun primaryButtonParams() = matchWrap().apply {
-        topMargin = dp(14)
-        bottomMargin = dp(8)
-    }
 }
