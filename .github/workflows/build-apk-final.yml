@@ -1,0 +1,56 @@
+name: APRIL Final Debug APK
+on:
+  push:
+    branches: [floatdeck-shell-integration]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract APRIL project and apply integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP_FILE="$(find . -maxdepth 3 -type f -name 'AnonymousClockstopper_TrueDepth_Gyro_FIXED_download.zip' -print -quit)"
+          test -n "$ZIP_FILE"
+          mkdir -p "$RUNNER_TEMP/android-project"
+          unzip -q "$ZIP_FILE" -d "$RUNNER_TEMP/android-project"
+          SETTINGS_FILE="$(find "$RUNNER_TEMP/android-project" -type f -name 'settings.gradle.kts' -print -quit)"
+          test -n "$SETTINGS_FILE"
+          PROJECT_ROOT="$(dirname "$SETTINGS_FILE")"
+          echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
+          mkdir -p "$PROJECT_ROOT/app/src/main/java/com/example/motogyro"
+          cp integration-patch/MotionSettings.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/MotionSettings.kt"
+          cp integration-patch/MainActivity.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/MainActivity.kt"
+          cp integration-patch/MotionController.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/MotionController.kt"
+          cp integration-patch/WallpaperRenderer.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/WallpaperRenderer.kt"
+          cp integration-patch/AprilWallpaperService.kt "$PROJECT_ROOT/app/src/main/java/com/example/motogyro/AprilWallpaperService.kt"
+          cp integration-patch/AndroidManifest.xml "$PROJECT_ROOT/app/src/main/AndroidManifest.xml"
+          mkdir -p "$PROJECT_ROOT/app/src/main/res/xml" "$PROJECT_ROOT/app/src/main/res/drawable" "$PROJECT_ROOT/app/src/main/res/mipmap-anydpi-v26"
+          cp integration-patch/wallpaper.xml "$PROJECT_ROOT/app/src/main/res/xml/wallpaper.xml"
+          cp integration-patch/ic_april_mask.xml "$PROJECT_ROOT/app/src/main/res/drawable/ic_april_mask.xml"
+          cp integration-patch/ic_launcher_foreground.xml "$PROJECT_ROOT/app/src/main/res/drawable/ic_launcher_foreground.xml"
+          cp integration-patch/ic_launcher.xml "$PROJECT_ROOT/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+          accept-android-sdk-licenses: true
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_ROOT }}
+        shell: bash
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          if [ -f ./gradlew ]; then chmod +x ./gradlew && ./gradlew assembleDebug --stacktrace; else sudo apt-get update && sudo apt-get install -y unzip && wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip -O "$RUNNER_TEMP/gradle.zip" && sudo mkdir -p /opt/gradle && sudo unzip -q "$RUNNER_TEMP/gradle.zip" -d /opt/gradle && /opt/gradle/gradle-8.9/bin/gradle assembleDebug --stacktrace; fi
+      - name: Upload APRIL APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: APRIL-FINAL-debug-apk
+          path: ${{ env.PROJECT_ROOT }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
