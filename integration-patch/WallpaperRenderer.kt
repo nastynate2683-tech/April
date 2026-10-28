@@ -11,7 +11,7 @@ import android.view.Choreographer
 import android.view.SurfaceHolder
 import kotlin.math.max
 
-/** Six transparent planes composited with depth-scaled gyro parallax. */
+/** Six transparent planes composited with deliberately strong gyro parallax. */
 class WallpaperRenderer(
     private val context: Context,
     private val holder: SurfaceHolder
@@ -36,8 +36,9 @@ class WallpaperRenderer(
         load(context, R.drawable.depth_layer_5),
         load(context, R.drawable.glass_reflection)
     )
-    // Stronger physical separation while preserving the existing six-layer renderer.
-    private val depth = floatArrayOf(0.8f, 2.2f, 4.5f, 7.5f, 11.0f, 13.0f)
+
+    // MASSIVE separation: the same six original layers, pushed much farther apart.
+    private val depth = floatArrayOf(2.0f, 5.0f, 10.0f, 16.0f, 24.0f, 30.0f)
     private var width = 1
     private var height = 1
     private var running = false
@@ -102,12 +103,12 @@ class WallpaperRenderer(
         val dh = bitmap.height * scale
         val bx = (width - dw) / 2f
         val by = (height - dh) / 2f
-        // Defaults (gyro 50, parallax 60, motion 40) remain the baseline response.
-        // The physical range is intentionally larger so 100% visibly moves the layers.
+
+        // Keep the existing controls, but make their physical effect unmistakable.
         val parallaxScale = currentSettings.parallaxDepth / 60f
         val motionScale = currentSettings.motionStrength / 40f
-        val sx = motion.x * depthMultiplier * parallaxScale * motionScale * width * 0.055f
-        val sy = motion.y * depthMultiplier * parallaxScale * motionScale * height * 0.055f
+        val sx = motion.x * depthMultiplier * parallaxScale * motionScale * width * 0.14f
+        val sy = motion.y * depthMultiplier * parallaxScale * motionScale * height * 0.14f
         canvas.drawBitmap(bitmap, null, RectF(bx - sx, by - sy, bx + dw - sx, by + dh - sy), paint)
     }
 
