@@ -7,16 +7,16 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
-import android.view.Choreographer
+import android.os.Handler
+import android.os.Looper
 import android.view.SurfaceHolder
 import kotlin.math.max
 
-/** Six transparent planes composited with ultra-deep gyro parallax. */
+/** Six original transparent planes composited with ultra-deep gyro parallax. */
 class WallpaperRenderer(
     private val context: Context,
     private val holder: SurfaceHolder
-) : Choreographer.FrameCallback {
-
+) {
     private val motion = MotionController(context)
     private val preferences = context.getSharedPreferences(
         MotionSettingsStore.PREFERENCES_NAME_FOR_LISTENER,
@@ -36,13 +36,25 @@ class WallpaperRenderer(
         load(context, R.drawable.depth_layer_5),
         load(context, R.drawable.glass_reflection)
     )
-
-    // ULTRA DEPTH: the same six original layers, with dramatically larger separation.
     private val depth = floatArrayOf(4.0f, 10.0f, 20.0f, 35.0f, 50.0f, 65.0f)
+    private val handler = Handler(Looper.getMainLooper())
     private var width = 1
     private var height = 1
     private var running = false
     private var lastFrameNanos = 0L
+
+    private val frameRunnable = object : Runnable {
+        override fun run() {
+            if (!running) return
+            val now = System.nanoTime()
+            val dt = if (lastFrameNanos == 0L) 1f / 60f
+                else ((now - lastFrameNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+            lastFrameNanos = now
+            motion.update(dt)
+            drawFrame()
+            if (running) handler.postDelayed(this, 16L)
+        }
+    }
 
     fun resize(w: Int, h: Int) {
         width = w.coerceAtLeast(1)
@@ -57,7 +69,8 @@ class WallpaperRenderer(
         motion.setSensitivity(settings.gyroSensitivity)
         preferences.registerOnSharedPreferenceChangeListener(settingsListener)
         motion.start()
-        Choreographer.getInstance().postFrameCallback(this)
+        handler.removeCallbacks(frameRunnable)
+        handler.post(frameRunnable)
     }
 
     fun stop() {
@@ -65,18 +78,8 @@ class WallpaperRenderer(
         running = false
         preferences.unregisterOnSharedPreferenceChangeListener(settingsListener)
         motion.stop()
-        Choreographer.getInstance().removeFrameCallback(this)
+        handler.removeCallbacks(frameRunnable)
         lastFrameNanos = 0L
-    }
-
-    override fun doFrame(frameTimeNanos: Long) {
-        if (!running) return
-        val dt = if (lastFrameNanos == 0L) 1f / 60f
-            else ((frameTimeNanos - lastFrameNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
-        lastFrameNanos = frameTimeNanos
-        motion.update(dt)
-        drawFrame()
-        if (running) Choreographer.getInstance().postFrameCallback(this)
     }
 
     private fun drawFrame() {
@@ -103,8 +106,6 @@ class WallpaperRenderer(
         val dh = bitmap.height * scale
         val bx = (width - dw) / 2f
         val by = (height - dh) / 2f
-
-        // Ultra-wide physical travel. Existing settings remain active and scale this effect.
         val parallaxScale = currentSettings.parallaxDepth / 60f
         val motionScale = currentSettings.motionStrength / 40f
         val sx = motion.x * depthMultiplier * parallaxScale * motionScale * width * 0.20f
