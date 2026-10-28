@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.os.Handler
@@ -12,22 +13,26 @@ import android.os.Looper
 import android.view.SurfaceHolder
 import kotlin.math.max
 
-/** Six original transparent planes composited with ultra-deep gyro parallax. */
+/**
+ * APRIL renderer. The untouched six-layer artwork remains the fallback/demo.
+ * Uploaded single images use a bounded camera window and a full-bleed backing
+ * image so motion never exposes black edges. The depth-map reconstruction
+ * module can replace this path without changing the upload/settings contract.
+ */
 class WallpaperRenderer(
     private val context: Context,
     private val holder: SurfaceHolder
 ) {
     private val motion = MotionController(context)
     private val preferences = context.getSharedPreferences(
-        MotionSettingsStore.PREFERENCES_NAME_FOR_LISTENER,
-        Context.MODE_PRIVATE
+        MotionSettingsStore.PREFERENCES_NAME_FOR_LISTENER, Context.MODE_PRIVATE
     )
     @Volatile private var settings = MotionSettingsStore.load(context)
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
         settings = MotionSettingsStore.load(context)
         motion.setSensitivity(settings.gyroSensitivity)
     }
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
     private val layers: List<Bitmap> = listOf(
         load(context, R.drawable.depth_layer_1),
         load(context, R.drawable.depth_layer_2),
@@ -36,13 +41,14 @@ class WallpaperRenderer(
         load(context, R.drawable.depth_layer_5),
         load(context, R.drawable.glass_reflection)
     )
-    private val depth = floatArrayOf(4.0f, 10.0f, 20.0f, 35.0f, 50.0f, 65.0f)
+    private val depth = floatArrayOf(4f, 10f, 20f, 35f, 50f, 65f)
+    private val customImageFile by lazy { java.io.File(context.filesDir, "april_custom_image.jpg") }
+    private var customImage: Bitmap? = null
     private val handler = Handler(Looper.getMainLooper())
     private var width = 1
     private var height = 1
-    private var running = false
+    @Volatile private var running = false
     private var lastFrameNanos = 0L
-
     private val frameRunnable = object : Runnable {
         override fun run() {
             if (!running) return
@@ -67,6 +73,8 @@ class WallpaperRenderer(
         lastFrameNanos = 0L
         settings = MotionSettingsStore.load(context)
         motion.setSensitivity(settings.gyroSensitivity)
+        customImage = if (preferences.getBoolean("use_custom_image", false) && customImageFile.exists())
+            BitmapFactory.decodeFile(customImageFile.absolutePath) else null
         preferences.registerOnSharedPreferenceChangeListener(settingsListener)
         motion.start()
         handler.removeCallbacks(frameRunnable)
@@ -85,31 +93,63 @@ class WallpaperRenderer(
     private fun drawFrame() {
         val canvas = try { holder.lockCanvas() } catch (_: Exception) { null } ?: return
         try {
-            canvas.drawColor(android.graphics.Color.BLACK)
-            val currentSettings = settings
-            layers.forEachIndexed { index, bitmap ->
-                drawLayer(bitmap, depth[index], currentSettings, canvas)
+            canvas.drawColor(Color.BLACK)
+            val selected = customImage
+            if (selected != null && !selected.isRecycled) {
+                drawUploadedImage(selected, canvas)
+            } else {
+                val currentSettings = settings
+                layers.forEachIndexed { index, bitmap ->
+                    drawLayer(bitmap, depth[index], currentSettings, canvas)
+                }
             }
         } finally {
             try { holder.unlockCanvasAndPost(canvas) } catch (_: Exception) { }
         }
     }
 
-    private fun drawLayer(
-        bitmap: Bitmap,
-        depthMultiplier: Float,
-        currentSettings: MotionSettings,
-        canvas: Canvas
-    ) {
+    private fun drawUploadedImage(bitmap: Bitmap, canvas: Canvas) {
+        // Cover the entire viewport with a softly enlarged copy first. It masks
+        // the tiny edge regions exposed by the bounded foreground movement.
+        val baseScale = max(width.toFloat() / bitmap.width, height.toFloat() / bitmap.height)
+        val bgW = bitmap.width * baseScale * 1.10f
+        val bgH = bitmap.height * baseScale * 1.10f
+        canvas.drawBitmap(bitmap, null, RectF(
+            (width - bgW) / 2f, (height - bgH) / 2f,
+            (width + bgW) / 2f, (height + bgH) / 2f
+        ), paint)
+
+        // Centered virtual-camera movement: never translate the whole image
+        // by the old, unbounded 20%-of-screen per-layer offsets.
+        val scale = baseScale * 1.055f
+        val dw = bitmap.width * scale
+        val dh = bitmap.height * scale
+        val parallax = settings.parallaxDepth / 100f
+        val motionStrength = settings.motionStrength / 100f
+        val maxX = width * 0.025f * parallax * motionStrength
+        val maxY = height * 0.025f * parallax * motionStrength
+        val sx = (motion.x * maxX).coerceIn(-maxX, maxX)
+        val sy = (motion.y * maxY).coerceIn(-maxY, maxY)
+        canvas.drawBitmap(bitmap, null, RectF(
+            (width - dw) / 2f - sx, (height - dh) / 2f - sy,
+            (width + dw) / 2f - sx, (height + dh) / 2f - sy
+        ), paint)
+    }
+
+    private fun drawLayer(bitmap: Bitmap, depthMultiplier: Float, current: MotionSettings, canvas: Canvas) {
         val scale = max(width.toFloat() / bitmap.width, height.toFloat() / bitmap.height) * 1.18f
         val dw = bitmap.width * scale
         val dh = bitmap.height * scale
         val bx = (width - dw) / 2f
         val by = (height - dh) / 2f
-        val parallaxScale = currentSettings.parallaxDepth / 60f
-        val motionScale = currentSettings.motionStrength / 40f
-        val sx = motion.x * depthMultiplier * parallaxScale * motionScale * width * 0.20f
-        val sy = motion.y * depthMultiplier * parallaxScale * motionScale * height * 0.20f
+        val parallaxScale = current.parallaxDepth / 60f
+        val motionScale = current.motionStrength / 40f
+        // Keep legacy layer offsets bounded so high settings don't throw the
+        // composition offscreen. The original artwork/layers are unchanged.
+        val sx = (motion.x * depthMultiplier * parallaxScale * motionScale * width * 0.20f)
+            .coerceIn(-width * 0.035f, width * 0.035f)
+        val sy = (motion.y * depthMultiplier * parallaxScale * motionScale * height * 0.20f)
+            .coerceIn(-height * 0.035f, height * 0.035f)
         canvas.drawBitmap(bitmap, null, RectF(bx - sx, by - sy, bx + dw - sx, by + dh - sy), paint)
     }
 
