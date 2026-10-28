@@ -1,0 +1,50 @@
+name: Inspect APRIL Android Source
+
+on:
+  push:
+    branches:
+      - inspect-april-source
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract existing Android project package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP_FILE="$(find . -maxdepth 3 -type f -name 'AnonymousClockstopper_TrueDepth_Gyro_FIXED_download.zip' -print -quit)"
+          test -n "$ZIP_FILE"
+          ROOT="$RUNNER_TEMP/april-inspect"
+          mkdir -p "$ROOT"
+          unzip -q "$ZIP_FILE" -d "$ROOT"
+          REPORT="$RUNNER_TEMP/source-inspection.txt"
+          {
+            echo "APRIL SOURCE INSPECTION"
+            echo "Package: $ZIP_FILE"
+            echo
+            echo "=== FILE INVENTORY (first 500 files) ==="
+            find "$ROOT" -type f | sed "s#^$ROOT/##" | sort | head -500
+            echo
+            echo "=== BUILD / MANIFEST FILES ==="
+            find "$ROOT" -type f \( -name 'AndroidManifest.xml' -o -name 'settings.gradle' -o -name 'settings.gradle.kts' -o -name 'build.gradle' -o -name 'build.gradle.kts' -o -name 'gradle.properties' \) -print | sed "s#^$ROOT/##" | sort
+            echo
+            echo "=== MOTION / SETTINGS IMPLEMENTATION SEARCH ==="
+            grep -RniE 'SensorManager|TYPE_GYROSCOPE|TYPE_ROTATION_VECTOR|gyroscope|parallax|motionStrength|motion_strength|sensitivity|SharedPreferences|DataStore|WallpaperService|live wallpaper|MotionEvent|tilt|accelerometer' "$ROOT" --include='*.kt' --include='*.java' --include='*.xml' --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.json' --include='*.gradle' --include='*.kts' --include='*.properties' 2>/dev/null | head -400 || true
+          } > "$REPORT"
+          cp "$REPORT" ./source-inspection.txt
+          echo "Inspection report generated."
+
+      - name: Upload source inspection report
+        uses: actions/upload-artifact@v4
+        with:
+          name: april-source-inspection
+          path: source-inspection.txt
+          if-no-files-found: error
