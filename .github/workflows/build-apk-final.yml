@@ -84,7 +84,8 @@ jobs:
           test -n "$APK"
           echo "Built APK: $APK"
           test "$(stat -c%s "$APK")" -gt 1000000
-          unzip -l "$APK" | grep -E 'classes.dex|AndroidManifest.xml|resources.arsc|ic_april_photo.png'
+          unzip -l "$APK" | grep -E 'classes.dex|AndroidManifest.xml|resources.arsc'
+          unzip -l "$APK" | grep -Fq 'ic_april_photo'
           unzip -p "$APK" classes.dex | strings | grep -Fq 'APPLY & CONTINUE'
           unzip -p "$APK" classes.dex | strings | grep -Fq 'APRIL-TurboDepth'
           unzip -p "$APK" classes.dex | strings | grep -Fq 'ACTION_CHANGE_LIVE_WALLPAPER'
