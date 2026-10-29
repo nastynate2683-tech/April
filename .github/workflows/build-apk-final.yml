@@ -74,9 +74,24 @@ jobs:
         shell: bash
         run: |
           if [ -f "./gradlew" ]; then ./gradlew -I "$RUNNER_TEMP/align-jvm-target.gradle" assembleDebug --stacktrace; else gradle -I "$RUNNER_TEMP/align-jvm-target.gradle" assembleDebug --stacktrace; fi
+      - name: Verify APRIL APK contents
+        working-directory: ${{ env.PROJECT_ROOT }}
+        shell: bash
+        run: |
+          APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          echo "Built APK: $APK"
+          unzip -l "$APK" | grep -E 'classes.dex|AndroidManifest.xml|resources.arsc'
+          test "$(stat -c%s "$APK")" -gt 1000000
+      - name: Rename APK for this test build
+        working-directory: ${{ env.PROJECT_ROOT }}
+        shell: bash
+        run: |
+          APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' -print -quit)"
+          cp "$APK" "app/build/outputs/apk/debug/APRIL-TEST-${GITHUB_RUN_NUMBER}.apk"
       - name: Upload APRIL APK
         uses: actions/upload-artifact@v4
         with:
-          name: APRIL-FINAL-debug-apk
-          path: ${{ env.PROJECT_ROOT }}/app/build/outputs/apk/debug/*.apk
+          name: APRIL-TEST-${{ github.run_number }}-debug-apk
+          path: ${{ env.PROJECT_ROOT }}/app/build/outputs/apk/debug/APRIL-TEST-${{ github.run_number }}.apk
           if-no-files-found: error
