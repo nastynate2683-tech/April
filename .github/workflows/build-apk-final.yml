@@ -32,7 +32,7 @@ jobs:
           cp integration-patch/AndroidManifest.xml "$PROJECT_ROOT/app/src/main/AndroidManifest.xml"
           mkdir -p "$PROJECT_ROOT/app/src/main/res/xml" "$PROJECT_ROOT/app/src/main/res/drawable" "$PROJECT_ROOT/app/src/main/res/mipmap-anydpi-v26"
           cp integration-patch/wallpaper.xml "$PROJECT_ROOT/app/src/main/res/xml/wallpaper.xml"
-          cp integration-patch/ic_april_mask.xml "$PROJECT_ROOT/app/src/main/res/drawable/ic_april_mask.xml"
+          cp integration-patch/ic_april_mask.jpg "$PROJECT_ROOT/app/src/main/res/drawable/ic_april_mask.jpg"
           cp integration-patch/ic_launcher_foreground.xml "$PROJECT_ROOT/app/src/main/res/drawable/ic_launcher_foreground.xml"
           cp integration-patch/ic_launcher.xml "$PROJECT_ROOT/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
       - uses: actions/setup-java@v4
