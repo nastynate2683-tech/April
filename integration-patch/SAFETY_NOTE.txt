@@ -1,0 +1,1 @@
+APRIL integration safety checkpoint before renderer/lifecycle hardening. Original build/android-debug-apk remains untouched.
