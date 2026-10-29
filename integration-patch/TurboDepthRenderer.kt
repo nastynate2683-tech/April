@@ -13,7 +13,16 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.max
 
-/** Continuous-surface renderer for uploaded images. The original six-layer renderer remains the fallback path. */
+/**
+ * Safe continuous-surface renderer for uploaded images.
+ *
+ * The original six-layer renderer remains the fallback/demo path. Uploaded
+ * images use a smooth, low-frequency depth field so 100% settings increase
+ * controlled parallax instead of turning the image into a rubber sheet.
+ *
+ * This renderer owns its EGL context/surface/thread and tears all GL resources
+ * down when the wallpaper surface stops or the renderer is stopped.
+ */
 class TurboDepthRenderer(
     private val holder: SurfaceHolder,
     private val motion: MotionController,
@@ -36,100 +45,156 @@ class TurboDepthRenderer(
     }
 
     fun stop() {
-        if (!running.getAndSet(false)) return
-        thread?.join(500)
+        running.set(false)
+        thread?.interrupt()
+        val current = thread
+        if (current != null && current !== Thread.currentThread()) {
+            try { current.join(1500) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+        }
         thread = null
     }
 
     private fun renderLoop() {
-        val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-        if (display == EGL14.EGL_NO_DISPLAY) return
-        val version = IntArray(2)
-        if (!EGL14.eglInitialize(display, version, 0, version, 1)) return
-        val configAttribs = intArrayOf(
-            EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
-            EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT,
-            EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8,
-            EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8,
-            EGL14.EGL_NONE
-        )
-        val configs = arrayOfNulls<android.opengl.EGLConfig>(1)
-        val count = IntArray(1)
-        if (!EGL14.eglChooseConfig(display, configAttribs, 0, configs, 0, 1, count, 0) || count[0] == 0) {
-            EGL14.eglTerminate(display); return
-        }
-        val config = configs[0] ?: run { EGL14.eglTerminate(display); return }
-        val contextAttrs = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE)
-        val eglContext = EGL14.eglCreateContext(display, config, EGL14.EGL_NO_CONTEXT, contextAttrs, 0)
-        if (eglContext == EGL14.EGL_NO_CONTEXT) { EGL14.eglTerminate(display); return }
-        val surface = EGL14.eglCreateWindowSurface(display, config, holder.surface, intArrayOf(EGL14.EGL_NONE), 0)
-        if (surface == EGL14.EGL_NO_SURFACE) {
-            EGL14.eglDestroyContext(display, eglContext); EGL14.eglTerminate(display); return
-        }
-        if (!EGL14.eglMakeCurrent(display, surface, surface, eglContext)) {
-            EGL14.eglDestroySurface(display, surface); EGL14.eglDestroyContext(display, eglContext); EGL14.eglTerminate(display); return
-        }
+        var display: android.opengl.EGLDisplay? = null
+        var eglContext: android.opengl.EGLContext? = null
+        var surface: android.opengl.EGLSurface? = null
+        var texture = 0
+        var program = 0
+        var initialized = false
+
         try {
+            display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+            if (display == EGL14.EGL_NO_DISPLAY) return
+            val version = IntArray(2)
+            if (!EGL14.eglInitialize(display, version, 0, version, 1)) return
+            initialized = true
+
+            val configAttribs = intArrayOf(
+                EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+                EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT,
+                EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8,
+                EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8,
+                EGL14.EGL_NONE
+            )
+            val configs = arrayOfNulls<android.opengl.EGLConfig>(1)
+            val count = IntArray(1)
+            if (!EGL14.eglChooseConfig(display, configAttribs, 0, configs, 0, 1, count, 0) || count[0] == 0) return
+            val config = configs[0] ?: return
+
+            val contextAttrs = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE)
+            eglContext = EGL14.eglCreateContext(display, config, EGL14.EGL_NO_CONTEXT, contextAttrs, 0)
+            if (eglContext == EGL14.EGL_NO_CONTEXT) return
+
+            val windowSurface = holder.surface
+            if (!windowSurface.isValid) return
+            surface = EGL14.eglCreateWindowSurface(
+                display, config, windowSurface, intArrayOf(EGL14.EGL_NONE), 0
+            )
+            if (surface == EGL14.EGL_NO_SURFACE) return
+            if (!EGL14.eglMakeCurrent(display, surface, surface, eglContext)) return
+
             val bitmap = BitmapFactory.decodeFile(imageFile.absolutePath)
-            if (bitmap == null || bitmap.isRecycled) return
-            val program = createProgram(VERTEX_SHADER, FRAGMENT_SHADER)
-            val texture = uploadTexture(bitmap)
-            val mesh = buildMesh(bitmap)
-            val imageAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
-            bitmap.recycle()
-            GLES20.glUseProgram(program)
-            val position = GLES20.glGetAttribLocation(program, "aPosition")
-            val texCoord = GLES20.glGetAttribLocation(program, "aTexCoord")
-            val camera = GLES20.glGetUniformLocation(program, "uCamera")
-            val depthAmount = GLES20.glGetUniformLocation(program, "uDepthAmount")
-            val aspect = GLES20.glGetUniformLocation(program, "uAspect")
-            val textureLoc = GLES20.glGetUniformLocation(program, "uTexture")
-            GLES20.glUniform1i(textureLoc, 0)
-            GLES20.glDisable(GLES20.GL_CULL_FACE)
-            GLES20.glDisable(GLES20.GL_DEPTH_TEST)
-            GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
-            val frameBuffer = mesh.buffer
-            val stride = 5 * 4
-            frameBuffer.position(0)
-            GLES20.glVertexAttribPointer(position, 3, GLES20.GL_FLOAT, false, stride, frameBuffer)
-            GLES20.glEnableVertexAttribArray(position)
-            frameBuffer.position(3)
-            GLES20.glVertexAttribPointer(texCoord, 2, GLES20.GL_FLOAT, false, stride, frameBuffer)
-            GLES20.glEnableVertexAttribArray(texCoord)
-            var last = System.nanoTime()
-            while (running.get() && holder.surface.isValid) {
-                val now = System.nanoTime()
-                val dt = ((now - last) / 1_000_000_000f).coerceIn(0f, 0.05f)
-                last = now
-                motion.update(dt)
-                val s = settingsProvider()
-                val p = (s.parallaxDepth / 100f).coerceIn(0f, 1f)
-                val m = (s.motionStrength / 100f).coerceIn(0f, 1f)
-                val g = (s.gyroSensitivity / 100f).coerceIn(0f, 1f)
-                // Parallax controls depth separation. Gyro controls response and
-                // motion controls travel. The whole image is never translated.
-                val cameraX = motion.x * g * m * p * 0.055f
-                val cameraY = motion.y * g * m * p * 0.055f
-                val surfaceAspect = width.toFloat() / height.toFloat()
-                val fitX = if (surfaceAspect > imageAspect) 1f else surfaceAspect / imageAspect
-                val fitY = if (surfaceAspect > imageAspect) imageAspect / surfaceAspect else 1f
-                GLES20.glViewport(0, 0, width, height)
-                GLES20.glClearColor(0f, 0f, 0f, 1f)
-                GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-                GLES20.glUniform2f(camera, cameraX, cameraY)
-                GLES20.glUniform1f(depthAmount, p)
-                GLES20.glUniform2f(aspect, fitX, fitY)
-                GLES20.glDrawElements(GLES20.GL_TRIANGLES, mesh.indexCount, GLES20.GL_UNSIGNED_SHORT, mesh.indices)
-                EGL14.eglSwapBuffers(display, surface)
-                Thread.sleep(16)
+                ?: return
+            if (bitmap.isRecycled) return
+
+            try {
+                program = createProgram(VERTEX_SHADER, FRAGMENT_SHADER)
+                texture = uploadTexture(bitmap)
+                val mesh = buildMesh(bitmap)
+                val imageAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
+
+                GLES20.glUseProgram(program)
+                val position = GLES20.glGetAttribLocation(program, "aPosition")
+                val texCoord = GLES20.glGetAttribLocation(program, "aTexCoord")
+                val camera = GLES20.glGetUniformLocation(program, "uCamera")
+                val depthAmount = GLES20.glGetUniformLocation(program, "uDepthAmount")
+                val aspect = GLES20.glGetUniformLocation(program, "uAspect")
+                val textureLoc = GLES20.glGetUniformLocation(program, "uTexture")
+                GLES20.glUniform1i(textureLoc, 0)
+                GLES20.glDisable(GLES20.GL_CULL_FACE)
+                GLES20.glDisable(GLES20.GL_DEPTH_TEST)
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
+
+                val frameBuffer = mesh.buffer
+                val stride = 5 * 4
+                frameBuffer.position(0)
+                GLES20.glVertexAttribPointer(position, 3, GLES20.GL_FLOAT, false, stride, frameBuffer)
+                GLES20.glEnableVertexAttribArray(position)
+                frameBuffer.position(3)
+                GLES20.glVertexAttribPointer(texCoord, 2, GLES20.GL_FLOAT, false, stride, frameBuffer)
+                GLES20.glEnableVertexAttribArray(texCoord)
+
+                var last = System.nanoTime()
+                while (running.get() && !Thread.currentThread().isInterrupted && holder.surface.isValid) {
+                    val now = System.nanoTime()
+                    val dt = ((now - last) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                    last = now
+                    motion.update(dt)
+                    val s = settingsProvider()
+                    val p = safeCurve(s.parallaxDepth)
+                    val m = safeCurve(s.motionStrength)
+                    val g = safeCurve(s.gyroSensitivity)
+
+                    // 100% means maximum controlled travel, never maximum distortion.
+                    val cameraX = motion.x * g * m * p * 0.060f
+                    val cameraY = motion.y * g * m * p * 0.060f
+                    val surfaceAspect = width.toFloat() / height.toFloat()
+                    val fitX = if (surfaceAspect > imageAspect) 1f else surfaceAspect / imageAspect
+                    val fitY = if (surfaceAspect > imageAspect) imageAspect / surfaceAspect else 1f
+
+                    GLES20.glViewport(0, 0, width, height)
+                    GLES20.glClearColor(0f, 0f, 0f, 1f)
+                    GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+                    GLES20.glUniform2f(camera, cameraX, cameraY)
+                    GLES20.glUniform1f(depthAmount, p)
+                    GLES20.glUniform2f(aspect, fitX, fitY)
+                    GLES20.glDrawElements(
+                        GLES20.GL_TRIANGLES,
+                        mesh.indexCount,
+                        GLES20.GL_UNSIGNED_SHORT,
+                        mesh.indices
+                    )
+
+                    if (!EGL14.eglSwapBuffers(display, surface)) break
+                    try {
+                        Thread.sleep(16)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        break
+                    }
+                }
+            } finally {
+                bitmap.recycle()
             }
         } finally {
-            EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
-            EGL14.eglDestroySurface(display, surface)
-            EGL14.eglDestroyContext(display, eglContext)
-            EGL14.eglTerminate(display)
+            // Delete GL objects while the context is still current.
+            if (display != null && display != EGL14.EGL_NO_DISPLAY &&
+                eglContext != null && eglContext != EGL14.EGL_NO_CONTEXT &&
+                surface != null && surface != EGL14.EGL_NO_SURFACE &&
+                EGL14.eglGetCurrentContext() == eglContext) {
+                if (texture != 0) GLES20.glDeleteTextures(1, intArrayOf(texture), 0)
+                if (program != 0) GLES20.glDeleteProgram(program)
+            }
+            if (display != null && display != EGL14.EGL_NO_DISPLAY) {
+                try { EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT) } catch (_: Exception) { }
+                if (surface != null && surface != EGL14.EGL_NO_SURFACE) {
+                    try { EGL14.eglDestroySurface(display, surface) } catch (_: Exception) { }
+                }
+                if (eglContext != null && eglContext != EGL14.EGL_NO_CONTEXT) {
+                    try { EGL14.eglDestroyContext(display, eglContext) } catch (_: Exception) { }
+                }
+                if (initialized) {
+                    try { EGL14.eglTerminate(display) } catch (_: Exception) { }
+                }
+            }
+            running.set(false)
         }
+    }
+
+    private fun safeCurve(value: Int): Float {
+        val normalized = (value.coerceIn(0, 100) / 100f)
+        return normalized * normalized * (3f - 2f * normalized)
     }
 
     private fun uploadTexture(bitmap: Bitmap): Int {
@@ -150,27 +215,56 @@ class TurboDepthRenderer(
         val cols = 64
         val rows = 64
         val verts = FloatArray((cols + 1) * (rows + 1) * 5)
+        val rawDepth = FloatArray((cols + 1) * (rows + 1))
+
+        // Build a low-frequency depth field. Several samples around each vertex
+        // prevent individual bright/dark pixels from producing violent folds.
         for (r in 0..rows) {
             val v = r.toFloat() / rows
             val y = 1f - 2f * v
             for (c in 0..cols) {
                 val u = c.toFloat() / cols
                 val x = 2f * u - 1f
-                val px = (u * (bitmap.width - 1)).toInt()
-                val py = (v * (bitmap.height - 1)).toInt()
-                val color = bitmap.getPixel(px, py)
-                val lum = (android.graphics.Color.red(color) * 0.299f + android.graphics.Color.green(color) * 0.587f + android.graphics.Color.blue(color) * 0.114f) / 255f
-                val center = 1f - max(abs(x), abs(y))
-                val z = (0.12f + 0.58f * lum + 0.18f * center).coerceIn(0.06f, 0.90f)
+                rawDepth[r * (cols + 1) + c] = sampleSmoothLuma(bitmap, u, v)
                 val i = (r * (cols + 1) + c) * 5
-                verts[i] = x; verts[i + 1] = y; verts[i + 2] = z; verts[i + 3] = u; verts[i + 4] = v
+                verts[i] = x
+                verts[i + 1] = y
+                verts[i + 3] = u
+                verts[i + 4] = v
             }
         }
+
+        var smooth = rawDepth
+        repeat(3) {
+            val next = smooth.copyOf()
+            for (r in 1 until rows) for (c in 1 until cols) {
+                val i = r * (cols + 1) + c
+                next[i] = (
+                    smooth[i] * 4f +
+                        smooth[i - 1] + smooth[i + 1] +
+                        smooth[i - (cols + 1)] + smooth[i + (cols + 1)]
+                    ) / 8f
+            }
+            smooth = next
+        }
+
+        for (r in 0..rows) for (c in 0..cols) {
+            val i = r * (cols + 1) + c
+            val x = verts[i * 5]
+            val y = verts[i * 5 + 1]
+            val center = (1f - max(abs(x), abs(y))).coerceIn(0f, 1f)
+            // Keep the depth field broad and smooth. It is deliberately bounded
+            // so the surface cannot fold over itself at maximum settings.
+            verts[i * 5 + 2] = (0.10f + 0.48f * smooth[i] + 0.10f * center).coerceIn(0.08f, 0.68f)
+        }
+
         val indices = ShortArray(cols * rows * 6)
         var k = 0
         for (r in 0 until rows) for (c in 0 until cols) {
-            val a = r * (cols + 1) + c; val b = a + 1
-            val d = (r + 1) * (cols + 1) + c; val e = d + 1
+            val a = r * (cols + 1) + c
+            val b = a + 1
+            val d = (r + 1) * (cols + 1) + c
+            val e = d + 1
             indices[k++] = a.toShort(); indices[k++] = d.toShort(); indices[k++] = b.toShort()
             indices[k++] = b.toShort(); indices[k++] = d.toShort(); indices[k++] = e.toShort()
         }
@@ -179,6 +273,23 @@ class TurboDepthRenderer(
         val ib = ByteBuffer.allocateDirect(indices.size * 2).order(ByteOrder.nativeOrder()).asShortBuffer()
         ib.put(indices).position(0)
         return Mesh(vb, ib, indices.size)
+    }
+
+    private fun sampleSmoothLuma(bitmap: Bitmap, u: Float, v: Float): Float {
+        val cx = (u * (bitmap.width - 1)).toInt()
+        val cy = (v * (bitmap.height - 1)).toInt()
+        var sum = 0f
+        var count = 0
+        for (dy in -2..2 step 2) for (dx in -2..2 step 2) {
+            val px = (cx + dx).coerceIn(0, bitmap.width - 1)
+            val py = (cy + dy).coerceIn(0, bitmap.height - 1)
+            val color = bitmap.getPixel(px, py)
+            sum += (android.graphics.Color.red(color) * 0.299f +
+                android.graphics.Color.green(color) * 0.587f +
+                android.graphics.Color.blue(color) * 0.114f) / 255f
+            count++
+        }
+        return (sum / count).coerceIn(0f, 1f)
     }
 
     private fun createProgram(vertex: String, fragment: String): Int {
@@ -212,7 +323,9 @@ class TurboDepthRenderer(
             varying vec2 vTexCoord;
             void main() {
                 float z = aPosition.z * uDepthAmount;
-                float scale = 1.0 + z * 0.08;
+                // Only a tiny perspective component is used; almost all movement
+                // comes from depth separation, preventing rubber-sheet stretching.
+                float scale = 1.0 + z * 0.015;
                 vec2 p = aPosition.xy * scale + uCamera * z;
                 p *= uAspect;
                 gl_Position = vec4(p, 0.0, 1.0);
