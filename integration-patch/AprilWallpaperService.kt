@@ -62,17 +62,7 @@ class AprilWallpaperService : WallpaperService() {
 
         private fun syncRenderer() {
             val current = renderer ?: return
-            if (surfaceReady && visible && currentSurfaceIsValid()) {
-                current.start()
-            } else {
-                current.stop()
-            }
-        }
-
-        private fun currentSurfaceIsValid(): Boolean = try {
-            renderer != null
-        } catch (_: Exception) {
-            false
+            if (surfaceReady && visible) current.start() else current.stop()
         }
     }
 }
