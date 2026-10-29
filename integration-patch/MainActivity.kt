@@ -77,7 +77,7 @@ class MainActivity : Activity() {
         preview = ImageView(this).apply {
             // Show the complete scene in the settings preview. depth_layer_1 is
             // a transparent depth layer, not the finished APRIL artwork.
-            scaleType = ImageView.ScaleType.CENTER_CROP
+            scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(0xFF050505.toInt())
             contentDescription = "APRIL image preview"
         }
