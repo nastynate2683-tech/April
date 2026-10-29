@@ -75,6 +75,8 @@ class MainActivity : Activity() {
         }, compactWrap())
 
         preview = ImageView(this).apply {
+            // Show the complete scene in the settings preview. depth_layer_1 is
+            // a transparent depth layer, not the finished APRIL artwork.
             scaleType = ImageView.ScaleType.CENTER_CROP
             setBackgroundColor(0xFF050505.toInt())
             contentDescription = "APRIL image preview"
@@ -219,7 +221,10 @@ class MainActivity : Activity() {
                 return
             }
         }
-        preview.setImageResource(R.drawable.depth_layer_1)
+        // The original project contains a complete finished scene in scene_color.
+        // depth_layer_1 is intentionally only one transparent depth layer and must
+        // never be used as the user-facing preview.
+        preview.setImageResource(R.drawable.scene_color)
         imageStatus.text = "APRIL original demo artwork"
     }
 
