@@ -140,13 +140,12 @@ class TurboDepthRenderer(
                     val cameraX = motion.x * g * m * p * 0.060f
                     val cameraY = motion.y * g * m * p * 0.060f
                     val surfaceAspect = width.toFloat() / height.toFloat()
-                    // Convert the source image aspect ratio into normalized device coordinates.
-                    // NDC is square, so the limiting axis must remain 1.0 and the
-                    // other axis must letterbox/pillarbox. The previous branches
-                    // were inverted and applied the surface ratio twice, visibly
-                    // compressing uploaded photos on the live wallpaper.
-                    val fitX = if (surfaceAspect > imageAspect) imageAspect / surfaceAspect else 1f
-                    val fitY = if (surfaceAspect > imageAspect) 1f else surfaceAspect / imageAspect
+                    // Fill the entire wallpaper surface while preserving the photo's proportions.
+                    // The limiting axis stays at 1.0; the other expands to cover the
+                    // viewport. This intentionally crops a small amount from the sides
+                    // (or top/bottom on a wider surface) instead of leaving black bars.
+                    val fitX = if (surfaceAspect > imageAspect) 1f else surfaceAspect / imageAspect
+                    val fitY = if (surfaceAspect > imageAspect) imageAspect / surfaceAspect else 1f
 
                     GLES20.glViewport(0, 0, width, height)
                     GLES20.glClearColor(0f, 0f, 0f, 1f)
