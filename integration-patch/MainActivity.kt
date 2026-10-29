@@ -2,6 +2,7 @@ package com.example.motogyro
 
 import android.app.Activity
 import android.app.WallpaperManager
+import android.content.ComponentName
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -90,7 +91,6 @@ class MainActivity : Activity() {
         content.addView(imageStatus, compactWrap())
         refreshPreview()
 
-        // Small left-aligned paperclip/upload control to save vertical space.
         val uploadRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
@@ -140,7 +140,6 @@ class MainActivity : Activity() {
         }
         content.addView(presets, compactWrap())
 
-        // Always visible main action; it sits before the detailed sliders.
         content.addView(Button(this).apply {
             text = "APPLY & CONTINUE"
             textSize = 13f
@@ -231,10 +230,19 @@ class MainActivity : Activity() {
     }
 
     private fun openLiveWallpaperChooser() {
+        val service = ComponentName(this, AprilWallpaperService::class.java)
         try {
-            startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER))
+            // Prefer Android's direct "set this live wallpaper" flow. This avoids
+            // depending on a Motorola wallpaper-picker screen that may be hidden.
+            startActivity(Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+                putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, service)
+            })
         } catch (_: Exception) {
-            Toast.makeText(this, "Android live wallpapers are unavailable on this device", Toast.LENGTH_LONG).show()
+            try {
+                startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER))
+            } catch (_: Exception) {
+                Toast.makeText(this, "Android live wallpapers are unavailable on this device", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
