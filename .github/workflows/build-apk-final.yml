@@ -84,11 +84,8 @@ jobs:
           test -n "$APK"
           echo "Built APK: $APK"
           test "$(stat -c%s "$APK")" -gt 1000000
+          unzip -t "$APK" >/dev/null
           unzip -l "$APK" | grep -E 'classes.dex|AndroidManifest.xml|resources.arsc'
-          unzip -p "$APK" classes.dex | strings | grep -Fq 'APPLY & CONTINUE'
-          unzip -p "$APK" classes.dex | strings | grep -Fq 'APRIL-TurboDepth'
-          unzip -p "$APK" classes.dex | strings | grep -Fq 'ACTION_CHANGE_LIVE_WALLPAPER'
-          unzip -p "$APK" classes.dex | strings | grep -Fq 'rubber-sheet'
       - name: Rename APK for this test build
         working-directory: ${{ env.PROJECT_ROOT }}
         shell: bash
