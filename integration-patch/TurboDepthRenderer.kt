@@ -215,7 +215,6 @@ class TurboDepthRenderer(
         val cols = 64
         val rows = 64
         val verts = FloatArray((cols + 1) * (rows + 1) * 5)
-        val rawDepth = FloatArray((cols + 1) * (rows + 1))
 
         // Build a low-frequency depth field. Several samples around each vertex
         // prevent individual bright/dark pixels from producing violent folds.
@@ -225,38 +224,19 @@ class TurboDepthRenderer(
             for (c in 0..cols) {
                 val u = c.toFloat() / cols
                 val x = 2f * u - 1f
-                rawDepth[r * (cols + 1) + c] = sampleSmoothLuma(bitmap, u, v)
+                // Keep the uploaded photograph on a geometrically flat textured surface.
+                // The former luminance-derived vertex depths bent every bright/dark edge,
+                // making the entire photo look compressed or melted. Depth controls now
+                // affect only bounded camera parallax in the shader, never image geometry.
                 val i = (r * (cols + 1) + c) * 5
                 verts[i] = x
                 verts[i + 1] = y
+                verts[i + 2] = 0.42f
                 verts[i + 3] = u
                 verts[i + 4] = v
             }
         }
 
-        var smooth = rawDepth
-        repeat(3) {
-            val next = smooth.copyOf()
-            for (r in 1 until rows) for (c in 1 until cols) {
-                val i = r * (cols + 1) + c
-                next[i] = (
-                    smooth[i] * 4f +
-                        smooth[i - 1] + smooth[i + 1] +
-                        smooth[i - (cols + 1)] + smooth[i + (cols + 1)]
-                    ) / 8f
-            }
-            smooth = next
-        }
-
-        for (r in 0..rows) for (c in 0..cols) {
-            val i = r * (cols + 1) + c
-            val x = verts[i * 5]
-            val y = verts[i * 5 + 1]
-            val center = (1f - max(abs(x), abs(y))).coerceIn(0f, 1f)
-            // Keep the depth field broad and smooth. It is deliberately bounded
-            // so the surface cannot fold over itself at maximum settings.
-            verts[i * 5 + 2] = (0.10f + 0.48f * smooth[i] + 0.10f * center).coerceIn(0.08f, 0.68f)
-        }
 
         val indices = ShortArray(cols * rows * 6)
         var k = 0
