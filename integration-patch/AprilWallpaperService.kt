@@ -16,11 +16,11 @@ class AprilWallpaperService : WallpaperService() {
 
         override fun onSurfaceCreated(holder: SurfaceHolder) {
             super.onSurfaceCreated(holder)
+            // A wallpaper surface can be recreated without the Engine itself
+            // being destroyed. Never leave the previous renderer/thread alive.
+            renderer?.stop()
             renderer = WallpaperRenderer(this@AprilWallpaperService, holder)
-            surfaceReady = true
-            // Android can call onSurfaceCreated before the preview surface has
-            // its final dimensions. Draw once after the surface is ready, then
-            // let the renderer take over the animated frame loop.
+            surfaceReady = holder.surface?.isValid == true
             mainHandler.post { syncRenderer() }
         }
 
@@ -33,32 +33,46 @@ class AprilWallpaperService : WallpaperService() {
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
             surfaceReady = false
-            renderer?.stop()
+            mainHandler.removeCallbacksAndMessages(null)
+            val old = renderer
             renderer = null
+            old?.stop()
             super.onSurfaceDestroyed(holder)
         }
 
         override fun onVisibilityChanged(isVisible: Boolean) {
             super.onVisibilityChanged(isVisible)
             visible = isVisible
-            mainHandler.post { syncRenderer() }
+            if (!isVisible) {
+                // Stop immediately when Android takes the wallpaper off-screen.
+                renderer?.stop()
+            } else {
+                mainHandler.post { syncRenderer() }
+            }
         }
 
         override fun onDestroy() {
             surfaceReady = false
-            renderer?.stop()
-            renderer = null
             mainHandler.removeCallbacksAndMessages(null)
+            val old = renderer
+            renderer = null
+            old?.stop()
             super.onDestroy()
         }
 
         private fun syncRenderer() {
             val current = renderer ?: return
-            if (surfaceReady && visible) {
+            if (surfaceReady && visible && currentSurfaceIsValid()) {
                 current.start()
             } else {
                 current.stop()
             }
+        }
+
+        private fun currentSurfaceIsValid(): Boolean = try {
+            renderer != null
+        } catch (_: Exception) {
+            false
         }
     }
 }
